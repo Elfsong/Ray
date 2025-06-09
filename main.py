@@ -9,6 +9,7 @@ import json
 import string
 import random
 import shutil
+import tempfile
 import datetime
 import subprocess
 from tqdm import tqdm
@@ -59,6 +60,56 @@ def rename_test_functions(test_code):
     
     return '\n'.join(new_lines)
 
+def parse_pytest_output(output: str) -> dict:
+    """
+    Parses the stdout of a `pytest --cov` run to extract key metrics.
+
+    Args:
+        output: The string output from the pytest command.
+
+    Returns:
+        A dictionary containing test results and coverage.
+    """
+    # 🎯 Default values
+    total_coverage = 0
+    passed_count = 0
+    failed_count = 0
+
+    # Regex to find the total coverage percentage from the 'TOTAL' line
+    coverage_match = re.search(r"^TOTAL\s+.*\s+(\d+)%$", output, re.MULTILINE)
+    if coverage_match:
+        total_coverage = int(coverage_match.group(1))
+
+    # Regex to find the numbers in the final summary line
+    # e.g., "===... 4 failed, 1 passed in 9.85s ...==="
+    summary_line_match = re.search(
+        r"=+ (.*) in .*s =+", output
+    )
+    if summary_line_match:
+        summary_text = summary_line_match.group(1)
+        
+        passed_match = re.search(r"(\d+)\s+passed", summary_text)
+        if passed_match:
+            passed_count = int(passed_match.group(1))
+            
+        failed_match = re.search(r"(\d+)\s+failed", summary_text)
+        if failed_match:
+            failed_count = int(failed_match.group(1))
+
+    # --- Calculations ---
+    total_tests = passed_count + failed_count
+    pass_rate = 0.0
+    if total_tests > 0:
+        pass_rate = (passed_count / total_tests) * 100
+
+    return {
+        "total_coverage_percent": total_coverage,
+        "pass_rate_percent": round(pass_rate, 2),
+        "passed_tests": passed_count,
+        "failed_tests": failed_count,
+        "total_tests": total_tests,
+    }
+
 # Initialization 
 def cosmic_ray_init(model_generation_file, timeout=1, num_samples=100):
     model_name = model_generation_file.split('/')[-1].split('.')[0]
@@ -74,8 +125,9 @@ def cosmic_ray_init(model_generation_file, timeout=1, num_samples=100):
 
     for idx, line in tqdm(enumerate(raw_data), desc="[+] 💾 Processing raw data"):
         instance = json.loads(line)
+        os.makedirs(f'data/mods/{model_name}/task_{idx}')
 
-        with open(f'data/mods/{model_name}/test_{idx}.py', 'w') as f:
+        with open(f'data/mods/{model_name}/task_{idx}/test.py', 'w') as f:
             test_code = ''
             test_code += code_import + '\n\n'
             test_code += instance['code'] + '\n\n'
@@ -89,7 +141,7 @@ def cosmic_ray_init(model_generation_file, timeout=1, num_samples=100):
             f.write(test_code)
 
         # create 'toml'
-        with open(f'data/mods/{model_name}/{idx}.toml', 'w') as f:
+        with open(f'data/mods/{model_name}/task_{idx}/cosmic-ray.toml', 'w') as f:
             f.write(toml_template.format(model_name=model_name, mod_name=idx, timeout=timeout))
 
 def cosmic_ray_setup(model_generation_file):
@@ -166,10 +218,33 @@ def mutation_run(model_generation_file):
     process_map(mutation_run_wrapper, model_name, correct_tasks, desc="[+] 🔮 Running mutations")
     print(f'[+] ⏱️ End time: {datetime.datetime.now()}')
 
+def pytest_run_wrapper(task_pair):
+    model_name, task_id = task_pair
+    test_file_path = f'data/mods/{model_name}/{task_id}/test.py'
+    source_code_path = f'data/mods/{model_name}/{task_id}'
+    try:
+        # temporary dictionary to execute pytest
+        with tempfile.TemporaryDirectory() as temp_dir:
+            abs_test_file_path = os.path.abspath(test_file_path)
+            abs_source_code_path = os.path.abspath(source_code_path)
+            result = subprocess.run(['pytest', abs_test_file_path, f'--cov={abs_source_code_path}'], capture_output=True, text=True, timeout=30)
+            result_dict = parse_pytest_output(result.stdout)
+        return {'model_name': model_name, 'task': task_id, 'result': result_dict, "status": "success"}
+    except Exception as e:
+        return {'model_name': model_name, 'task': task_id, 'result': None, "status": "error"}
+
 def pytest_run(model_name):
-    for task in tqdm(os.listdir(f'data/mods/{model_name}'), desc="[+] 🔄 Running pytest"):
-        if task.endswith('.py'):
-            subprocess.run(['pytest', f'data/mods/{model_name}/{task}'], check=True)
+    tasks = list()
+    
+    for task in os.listdir(f'data/mods/{model_name}'):
+        if task.startswith('task_'):
+            tasks.append((model_name, task))
+            
+    results = process_map(pytest_run_wrapper, tasks, desc="[+] 🔄 Running pytest", chunksize=1)
+    
+    with open(f'data/mods/{model_name}/results.jsonl', 'w') as f:
+        for result in results:
+            f.write(json.dumps(result) + '\n')
 
 if __name__ == "__main__":
     model_generation_folder = "/home/nus_cisco_wp1/Projects/Ray/data/results"
@@ -177,8 +252,8 @@ if __name__ == "__main__":
         model_generation_file_path = os.path.join(model_generation_folder, model_generation_file)
         if model_generation_file_path.endswith('.jsonl'):
             model_name = model_generation_file_path.split('/')[-1].split('.')[0]
-            cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=100000)
+            cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=20)
             # cosmic_ray_setup(model_generation_file_path)
-            
+            pytest_run(model_name)
         print("================================================")
 
