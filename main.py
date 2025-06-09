@@ -227,7 +227,7 @@ def pytest_run_wrapper(task_pair):
         with tempfile.TemporaryDirectory() as temp_dir:
             abs_test_file_path = os.path.abspath(test_file_path)
             abs_source_code_path = os.path.abspath(source_code_path)
-            result = subprocess.run(['pytest', abs_test_file_path, f'--cov={abs_source_code_path}'], capture_output=True, text=True, timeout=30)
+            result = subprocess.run(['pytest', abs_test_file_path, f'--cov={abs_source_code_path}'], cwd=temp_dir, capture_output=True, text=True, timeout=30)
             result_dict = parse_pytest_output(result.stdout)
         return {'model_name': model_name, 'task': task_id, 'result': result_dict, "status": "success"}
     except Exception as e:
@@ -252,7 +252,7 @@ if __name__ == "__main__":
         model_generation_file_path = os.path.join(model_generation_folder, model_generation_file)
         if model_generation_file_path.endswith('.jsonl'):
             model_name = model_generation_file_path.split('/')[-1].split('.')[0]
-            cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=20)
+            cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=20000)
             # cosmic_ray_setup(model_generation_file_path)
             pytest_run(model_name)
         print("================================================")
