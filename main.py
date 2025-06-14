@@ -121,10 +121,12 @@ def cosmic_ray_init(model_generation_file, timeout=1, num_samples=100):
     os.makedirs(f'data/mods/{model_name}')
 
     data_hander = open(model_generation_file, 'r')
-    raw_data = data_hander.readlines()[:num_samples]
+    
+    # parse the data
+    # raw_data = data_hander.readlines()[:num_samples]
+    raw_data = json.loads(data_hander.read())[:num_samples]
 
-    for idx, line in tqdm(enumerate(raw_data), desc="[+] 💾 Processing raw data"):
-        instance = json.loads(line)
+    for idx, instance in tqdm(enumerate(raw_data), desc="[+] 💾 Processing raw data"):
         os.makedirs(f'data/mods/{model_name}/task_{idx}')
 
         with open(f'data/mods/{model_name}/task_{idx}/test.py', 'w') as f:
@@ -164,7 +166,7 @@ def cosmic_ray_setup(model_generation_file):
         # Run cosmic-ray
         try:
             # subprocess.run(['cosmic-ray', 'baseline', f'data/mods/{model_name}/{task_id}.toml'], check=True)
-            subprocess.run(['cosmic-ray', 'baseline', f'data/mods/{model_name}/{task_id}.toml'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(['cosmic-ray', 'baseline', f'data/mods/{model_name}/{task_id}.toml'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
             correct_tasks.append(task_id)
             print(f"[+] Correct task - {task_id}")
         except Exception as e:
@@ -227,7 +229,7 @@ def pytest_run_wrapper(task_pair):
         with tempfile.TemporaryDirectory() as temp_dir:
             abs_test_file_path = os.path.abspath(test_file_path)
             abs_source_code_path = os.path.abspath(source_code_path)
-            result = subprocess.run(['pytest', abs_test_file_path, f'--cov={abs_source_code_path}'], cwd=temp_dir, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(['pytest', abs_test_file_path, f'--cov={abs_source_code_path}', '--cov-branch'], cwd=temp_dir, capture_output=True, text=True, timeout=30)
             result_dict = parse_pytest_output(result.stdout)
         return {'model_name': model_name, 'task': task_id, 'result': result_dict, "status": "success"}
     except Exception as e:
@@ -246,14 +248,20 @@ def pytest_run(model_name):
         for result in results:
             f.write(json.dumps(result) + '\n')
 
-if __name__ == "__main__":
-    model_generation_folder = "/home/nus_cisco_wp1/Projects/Ray/data/results"
-    for model_generation_file in os.listdir(model_generation_folder):
-        model_generation_file_path = os.path.join(model_generation_folder, model_generation_file)
-        if model_generation_file_path.endswith('.jsonl'):
-            model_name = model_generation_file_path.split('/')[-1].split('.')[0]
-            cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=20000)
-            # cosmic_ray_setup(model_generation_file_path)
-            pytest_run(model_name)
-        print("================================================")
+# if __name__ == "__main__":
+#     model_generation_folder = "/home/nus_cisco_wp1/Projects/Ray/data/results"
+#     for model_generation_file in os.listdir(model_generation_folder):
+#         model_generation_file_path = os.path.join(model_generation_folder, model_generation_file)
+#         if model_generation_file_path.endswith('.jsonl'):
+#             model_name = model_generation_file_path.split('/')[-1].split('.')[0]
+#             cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=50)
+#             # cosmic_ray_setup(model_generation_file_path)
+#             pytest_run(model_name)
+#         print("================================================")
 
+if __name__ == "__main__":
+    model_generation_file_path = "data/results/datasetv3.jsonl"
+    
+    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=50)
+    cosmic_ray_setup(model_generation_file_path)
+    mutation_run(model_generation_file_path)
