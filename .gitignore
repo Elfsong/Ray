@@ -7,3 +7,4 @@ data/results/.DS_Store
 data/results/*
 cyclomatic_complexity.jsonl
 data/results.zip
+data/*
