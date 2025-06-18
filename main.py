@@ -181,7 +181,7 @@ def cosmic_ray_setup(model_generation_file):
 
 def cosmic_ray_status(model_name, task):
     try:
-        response = subprocess.run(['cr-report', f'data/mods/{model_name}/{task}.sqlite', '--show-pending'], check=True, capture_output=True, text=True)
+        response = subprocess.run(['cr-report', f'data/mods/{model_name}/{task}/cosmic-ray.sqlite', '--show-pending'], check=True, capture_output=True, text=True)
     except Exception as e:
         print(f'[-] Error: {e}')
         return False
@@ -198,18 +198,18 @@ def cosmic_ray_status(model_name, task):
     else:
         return False
 
-def mutation_run_wrapper(model_name, task, timeout=30):
+def mutation_run_wrapper(model_name, task):
     # cosmic-ray exec tutorial.toml tutorial.sqlite
     completed = cosmic_ray_status(model_name, task)
     if completed: return
     print(f"[+] Task {task}: Running mutations")
     
     try:
-        subprocess.run(['cosmic-ray', 'exec', f'data/mods/{model_name}/{task}/cosmic-ray.toml', f'data/mods/{model_name}/{task}/cosmic-ray.sqlite'], check=True, timeout=timeout)
+        subprocess.run(['cosmic-ray', 'exec', f'data/mods/{model_name}/{task}/cosmic-ray.toml', f'data/mods/{model_name}/{task}/cosmic-ray.sqlite'], check=True, timeout=120)
     except Exception as e:
         print(f'[-] Error: {e}')
 
-def mutation_run(model_generation_file, timeout=30):
+def mutation_run(model_generation_file):
     model_name = model_generation_file.split('/')[-1].split('.')[0]
     correct_tasks = list()
     with open(f'data/correct_tasks_{model_name}', 'r') as f:
@@ -217,7 +217,7 @@ def mutation_run(model_generation_file, timeout=30):
             correct_tasks.append(line.strip())
             
     print(f'[+] ⏱️ Start time: {datetime.datetime.now()}')
-    process_map(mutation_run_wrapper, model_name, correct_tasks, timeout, desc="[+] 🔮 Running mutations")
+    process_map(mutation_run_wrapper, [model_name]*len(correct_tasks), correct_tasks, desc="[+] 🔮 Running mutations", max_workers=1)
     print(f'[+] ⏱️ End time: {datetime.datetime.now()}')
 
 def pytest_run_wrapper(task_pair):
@@ -261,6 +261,6 @@ def pytest_run(model_name):
 
 if __name__ == "__main__":
     model_generation_file_path = "data/results/datasetv3.jsonl"
-    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=50)
+    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=100)
     cosmic_ray_setup(model_generation_file_path)
-    mutation_run(model_generation_file_path, timeout=60)
+    mutation_run(model_generation_file_path)
