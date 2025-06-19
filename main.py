@@ -146,6 +146,26 @@ def cosmic_ray_init(model_generation_file, timeout=1, num_samples=100):
         with open(f'data/mods/{model_name}/task_{idx}/cosmic-ray.toml', 'w') as f:
             f.write(toml_template.format(model_name=model_name, task_id=idx, timeout=timeout))
 
+def cosmic_ray_init_wrapper(model_name, task_id):
+    working_dir = f'data/mods/{model_name}/{task_id}'
+    
+    # Initialize cosmic-ray
+    try:
+        subprocess.run(['cosmic-ray', 'init', 'cosmic-ray.toml', 'cosmic-ray.sqlite'], cwd=working_dir, check=True)
+    except Exception as e:
+        print(f'[-] Initialize Cosmic-Ray Error: {e}')
+        return False
+
+    # Run cosmic-ray
+    try:
+        # subprocess.run(['cosmic-ray', 'baseline', f'data/mods/{model_name}/{task_id}.toml'], check=True)
+        subprocess.run(['cosmic-ray', 'baseline', 'cosmic-ray.toml'], cwd=working_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        # print(f"[+] Correct task - {task_id}")
+        return True
+    except Exception as e:
+        # print(f'[-] Run Cosmic-Ray Error: {e}')
+        return False
+
 def cosmic_ray_setup(model_generation_file):
     model_name = model_generation_file.split('/')[-1].split('.')[0]
     total_tasks = list()
@@ -154,31 +174,16 @@ def cosmic_ray_setup(model_generation_file):
     for file_name in tqdm(os.listdir(f'data/mods/{model_name}'), desc="[+] ⏳ Filtering baseline tasks"):
         if file_name.startswith('task_'):
             total_tasks.append(file_name)
-
-    for task_id in tqdm(total_tasks, desc="[+] 🔄 Initialize Cosmic-Ray Mutation"):
-        working_dir = f'data/mods/{model_name}/{task_id}'
         
-        # Initialize cosmic-ray
-        try:
-            subprocess.run(['cosmic-ray', 'init', 'cosmic-ray.toml', 'cosmic-ray.sqlite'], cwd=working_dir, check=True)
-        except Exception as e:
-            print(f'[-] Initialize Cosmic-Ray Error: {e}')
-            continue
-
-        # Run cosmic-ray
-        try:
-            # subprocess.run(['cosmic-ray', 'baseline', f'data/mods/{model_name}/{task_id}.toml'], check=True)
-            subprocess.run(['cosmic-ray', 'baseline', 'cosmic-ray.toml'], cwd=working_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-            correct_tasks.append(task_id)
-            print(f"[+] Correct task - {task_id}")
-        except Exception as e:
-            print(f'[-] Run Cosmic-Ray Error: {e}')
-            continue
+    task_results = process_map(cosmic_ray_init_wrapper, [model_name]*len(total_tasks), total_tasks, desc="[+] 🔄 Initialize Cosmic-Ray Mutation", chunksize=1)
     
     # Save correct tasks
     with open(f'data/correct_tasks_{model_name}', 'w') as f:
-        for task in correct_tasks:
-            f.write(f'{task}\n')
+        for task_id, result in zip(total_tasks, task_results):
+            if result:
+                correct_tasks.append(task_id)
+                f.write(f'{task_id}\n')
+
     print(f'[+] ✅ Correct tasks: {len(total_tasks)} -> {len(correct_tasks)} (convert rate: {len(correct_tasks) / len(total_tasks)})')
 
 def cosmic_ray_status(model_name, task):
@@ -254,6 +259,6 @@ def pytest_run(model_name):
 
 if __name__ == "__main__":
     model_generation_file_path = "data/results/datasetv3.jsonl"
-    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=10000)
+    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=1000)
     cosmic_ray_setup(model_generation_file_path)
     mutation_run(model_generation_file_path)
