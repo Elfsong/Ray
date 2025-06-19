@@ -18,10 +18,10 @@ from tqdm.contrib.concurrent import process_map
 
 toml_template = """
 [cosmic-ray]
-module-path = "data/mods/{model_name}/task_{task_id}/test.py"
+module-path = "test.py"
 timeout = {timeout}
 excluded-modules = []
-test-command = "pytest data/mods/{model_name}/task_{task_id}/test.py"
+test-command = "pytest test.py"
 
 [cosmic-ray.distributor]
 name = "local"
@@ -156,9 +156,11 @@ def cosmic_ray_setup(model_generation_file):
             total_tasks.append(file_name)
 
     for task_id in tqdm(total_tasks, desc="[+] 🔄 Initialize Cosmic-Ray Mutation"):
+        working_dir = f'data/mods/{model_name}/{task_id}'
+        
         # Initialize cosmic-ray
         try:
-            subprocess.run(['cosmic-ray', 'init', f'data/mods/{model_name}/{task_id}/cosmic-ray.toml', f'data/mods/{model_name}/{task_id}/cosmic-ray.sqlite'], check=True)
+            subprocess.run(['cosmic-ray', 'init', 'cosmic-ray.toml', 'cosmic-ray.sqlite'], cwd=working_dir, check=True)
         except Exception as e:
             print(f'[-] Initialize Cosmic-Ray Error: {e}')
             continue
@@ -166,11 +168,11 @@ def cosmic_ray_setup(model_generation_file):
         # Run cosmic-ray
         try:
             # subprocess.run(['cosmic-ray', 'baseline', f'data/mods/{model_name}/{task_id}.toml'], check=True)
-            subprocess.run(['cosmic-ray', 'baseline', f'data/mods/{model_name}/{task_id}/cosmic-ray.toml'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+            subprocess.run(['cosmic-ray', 'baseline', 'cosmic-ray.toml'], cwd=working_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
             correct_tasks.append(task_id)
             print(f"[+] Correct task - {task_id}")
         except Exception as e:
-            # print(f'[-] Run Cosmic-Ray Error: {e}')
+            print(f'[-] Run Cosmic-Ray Error: {e}')
             continue
     
     # Save correct tasks
@@ -204,8 +206,9 @@ def mutation_run_wrapper(model_name, task):
     if completed: return
     print(f"[+] Task {task}: Running mutations")
     
+    working_dir = f'data/mods/{model_name}/{task}'
     try:
-        subprocess.run(['cosmic-ray', 'exec', f'data/mods/{model_name}/{task}/cosmic-ray.toml', f'data/mods/{model_name}/{task}/cosmic-ray.sqlite'], check=True, timeout=120)
+        subprocess.run(['cosmic-ray', 'exec', f'cosmic-ray.toml', f'cosmic-ray.sqlite'], cwd=working_dir, check=True, timeout=120)
     except Exception as e:
         print(f'[-] Error: {e}')
 
@@ -248,19 +251,9 @@ def pytest_run(model_name):
         for result in results:
             f.write(json.dumps(result) + '\n')
 
-# if __name__ == "__main__":
-#     model_generation_folder = "/home/nus_cisco_wp1/Projects/Ray/data/results"
-#     for model_generation_file in os.listdir(model_generation_folder):
-#         model_generation_file_path = os.path.join(model_generation_folder, model_generation_file)
-#         if model_generation_file_path.endswith('.jsonl'):
-#             model_name = model_generation_file_path.split('/')[-1].split('.')[0]
-#             cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=50)
-#             # cosmic_ray_setup(model_generation_file_path)
-#             pytest_run(model_name)
-#         print("================================================")
 
 if __name__ == "__main__":
     model_generation_file_path = "data/results/datasetv3.jsonl"
-    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=100)
+    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=10000)
     cosmic_ray_setup(model_generation_file_path)
     mutation_run(model_generation_file_path)
