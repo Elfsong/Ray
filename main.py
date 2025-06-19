@@ -184,7 +184,7 @@ def cosmic_ray_setup(model_generation_file):
                 correct_tasks.append(task_id)
                 f.write(f'{task_id}\n')
 
-    print(f'[+] ✅ Correct tasks: {len(total_tasks)} -> {len(correct_tasks)} (convert rate: {len(correct_tasks) / len(total_tasks)})')
+    print(f'[+] ✅ Correct Tasks: {len(total_tasks)} -> {len(correct_tasks)} (Convert Rate: {len(correct_tasks) / len(total_tasks):.2%})')
 
 def cosmic_ray_status(model_name, task):
     try:
@@ -259,6 +259,6 @@ def pytest_run(model_name):
 
 if __name__ == "__main__":
     model_generation_file_path = "data/results/datasetv3.jsonl"
-    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=1000)
+    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=10000)
     cosmic_ray_setup(model_generation_file_path)
     mutation_run(model_generation_file_path)
