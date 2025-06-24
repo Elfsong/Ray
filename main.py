@@ -184,9 +184,9 @@ def cosmic_ray_setup(benchmark_name, model_generation_file, num_test_cases=5):
 
     print(f'[+] ✅ Correct Tasks: {len(total_tasks)} -> {len(correct_tasks)} (Convert Rate: {len(correct_tasks) / len(total_tasks):.2%})')
 
-def cosmic_ray_status(benchmark_name, model_name, task):
+def cosmic_ray_status(benchmark_name, model_name, task, num_test_cases):
     try:
-        response = subprocess.run(['cr-report', f'data/{benchmark_name}/{model_name}/{task}/cosmic-ray.sqlite', '--show-pending'], check=True, capture_output=True, text=True)
+        response = subprocess.run(['cr-report', f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/{task}/cosmic-ray.sqlite', '--show-pending'], check=True, capture_output=True, text=True)
     except Exception as e:
         print(f'[-] Error: {e}')
         return False
@@ -203,22 +203,25 @@ def cosmic_ray_status(benchmark_name, model_name, task):
     else:
         return False
 
-def mutation_run_wrapper(benchmark_name, model_name, task):
+def mutation_run_wrapper(benchmark_name, model_name, num_test_cases, task):
     # cosmic-ray exec tutorial.toml tutorial.sqlite
-    completed = cosmic_ray_status(benchmark_name, model_name, task)
+    completed = cosmic_ray_status(benchmark_name, model_name, task, num_test_cases)
     if completed: return
-    print(f"[+] Task {task}: Running mutations")
-    
-    working_dir = f'data/{benchmark_name}_mods/{model_name}/{task}'
+
+    # print(f"[+] Task {task}: Running mutations")
+    working_dir = f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/{task}'
     try:
         subprocess.run(['cosmic-ray', 'exec', f'cosmic-ray.toml', f'cosmic-ray.sqlite'], cwd=working_dir, check=True, timeout=120)
+    except subprocess.TimeoutExpired as e:
+        # print(f'[-] mutation_run_wrapper, Timeout: {e}')
+        pass
     except Exception as e:
-        print(f'[-] Error: {e}')
+        print(f'[-] mutation_run_wrapper, Error: {e}')
 
-def mutation_run(benchmark_name, model_generation_file):
+def mutation_run(benchmark_name, model_generation_file, num_test_cases):
     model_name = model_generation_file.split('/')[-1].split('.')[0]
     correct_tasks = list()
-    correct_tasks_path = f'data/{benchmark_name}_correct/correct_tasks_{model_name}'
+    correct_tasks_path = f'data/{benchmark_name}/correct_tasks_tc_5_{model_name}'
     
     with open(correct_tasks_path, 'r') as f:
         for line in f.readlines():
@@ -226,7 +229,7 @@ def mutation_run(benchmark_name, model_generation_file):
     print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
             
     print(f'[+] ⏱️ Start time: {datetime.datetime.now()}')
-    process_map(mutation_run_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), correct_tasks, desc="[+] 🔮 Running mutations")
+    process_map(mutation_run_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc="[+] 🔮 Running mutations...")
     print(f'[+] ⏱️ End time: {datetime.datetime.now()}')
 
 def pytest_run_wrapper(benchmark_name, model_name, task_id):
@@ -259,10 +262,12 @@ def pytest_run(benchmark_name, model_name):
 
 if __name__ == "__main__":
     benchmark_name = "testbench"
+    num_test_cases = 5
+    num_samples = 10000
+    
     for model_generation_file_path in tqdm(os.listdir(f"data/{benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
         model_generation_file_path = f"data/{benchmark_name}_generation/{model_generation_file_path}"
         print(f"[+] Processing {model_generation_file_path}")
-        
-        # cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=10000, num_test_cases=5)
-        cosmic_ray_setup(benchmark_name, model_generation_file_path)
-        # mutation_run(benchmark_name, model_generation_file_path)
+        # cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=num_samples, num_test_cases=num_samples)
+        # cosmic_ray_setup(benchmark_name, model_generation_file_path)
+        mutation_run(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
