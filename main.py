@@ -111,30 +111,27 @@ def parse_pytest_output(output: str) -> dict:
     }
 
 # Initialization 
-def cosmic_ray_init(model_generation_file, timeout=1, num_samples=100):
+def cosmic_ray_init(benchmark_name, model_generation_file, num_test_cases=5, timeout=1, num_samples=100):
     model_name = model_generation_file.split('/')[-1].split('.')[0]
 
-    if os.path.exists(f'data/mods/{model_name}'):
+    if os.path.exists(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}'):
         print(f"[+] 🧹 Cleaning up existing files in {model_name}...")
-        shutil.rmtree(f'data/mods/{model_name}')
+        shutil.rmtree(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}')
     print(f"[+] 📂 Creating new directory {model_name}...")
-    os.makedirs(f'data/mods/{model_name}')
+    os.makedirs(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}')
 
     data_hander = open(model_generation_file, 'r')
-    
-    # parse the data
-    # raw_data = data_hander.readlines()[:num_samples]
     raw_data = json.loads(data_hander.read())[:num_samples]
 
     for idx, instance in tqdm(enumerate(raw_data), desc="[+] 💾 Processing raw data"):
-        os.makedirs(f'data/mods/{model_name}/task_{idx}')
+        os.makedirs(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/task_{idx}')
 
-        with open(f'data/mods/{model_name}/task_{idx}/test.py', 'w') as f:
+        with open(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/task_{idx}/test.py', 'w') as f:
             test_code = ''
             test_code += code_import + '\n\n'
             test_code += instance['code'] + '\n\n'
             test_cases = ''
-            for test in instance['tests']:
+            for test in instance['tests'][:num_test_cases]:
                 test_cases += f'{test}\n\n'
             test_code += "\n\n" + "#" * 100 + "\n\n"
             test_code += test_cases
@@ -143,42 +140,43 @@ def cosmic_ray_init(model_generation_file, timeout=1, num_samples=100):
             f.write(test_code)
 
         # create 'toml'
-        with open(f'data/mods/{model_name}/task_{idx}/cosmic-ray.toml', 'w') as f:
+        with open(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/task_{idx}/cosmic-ray.toml', 'w') as f:
             f.write(toml_template.format(model_name=model_name, task_id=idx, timeout=timeout))
 
-def cosmic_ray_init_wrapper(model_name, task_id):
-    working_dir = f'data/mods/{model_name}/{task_id}'
+def cosmic_ray_setup_wrapper(benchmark_name, model_name, task_id, num_test_cases=5):
+    working_dir = f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/{task_id}'
     
-    # Initialize cosmic-ray
+    # Initialize Cosmic-Ray Config
     try:
         subprocess.run(['cosmic-ray', 'init', 'cosmic-ray.toml', 'cosmic-ray.sqlite'], cwd=working_dir, check=True)
     except Exception as e:
         print(f'[-] Initialize Cosmic-Ray Error: {e}')
         return False
 
-    # Run cosmic-ray
+    # Run Cosmic-Ray Baseline
     try:
-        # subprocess.run(['cosmic-ray', 'baseline', f'data/mods/{model_name}/{task_id}.toml'], check=True)
         subprocess.run(['cosmic-ray', 'baseline', 'cosmic-ray.toml'], cwd=working_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-        # print(f"[+] Correct task - {task_id}")
         return True
     except Exception as e:
-        # print(f'[-] Run Cosmic-Ray Error: {e}')
         return False
 
-def cosmic_ray_setup(model_generation_file):
+def cosmic_ray_setup(benchmark_name, model_generation_file, num_test_cases=5):
     model_name = model_generation_file.split('/')[-1].split('.')[0]
     total_tasks = list()
     correct_tasks = list()
+    
+    if os.path.exists(f'data/{benchmark_name}/correct_tasks_tc_{num_test_cases}_{model_name}'):
+        print(f'[+] ✅ data/{benchmark_name}/correct_tasks_tc_{num_test_cases}_{model_name} (Already exists)')
+        return
 
-    for file_name in tqdm(os.listdir(f'data/mods/{model_name}'), desc="[+] ⏳ Filtering baseline tasks"):
+    for file_name in tqdm(os.listdir(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}'), desc="[+] ⏳ Filtering baseline tasks"):
         if file_name.startswith('task_'):
             total_tasks.append(file_name)
         
-    task_results = process_map(cosmic_ray_init_wrapper, [model_name]*len(total_tasks), total_tasks, desc="[+] 🔄 Initialize Cosmic-Ray Mutation", chunksize=1)
+    task_results = process_map(cosmic_ray_setup_wrapper, [benchmark_name]*len(total_tasks), [model_name]*len(total_tasks), total_tasks, [num_test_cases]*len(total_tasks), desc="[+] 🔄 Initialize Cosmic-Ray Mutation", chunksize=1)
     
     # Save correct tasks
-    with open(f'data/correct_tasks_{model_name}', 'w') as f:
+    with open(f'data/{benchmark_name}/correct_tasks_tc_{num_test_cases}_{model_name}', 'w') as f:
         for task_id, result in zip(total_tasks, task_results):
             if result:
                 correct_tasks.append(task_id)
@@ -186,9 +184,9 @@ def cosmic_ray_setup(model_generation_file):
 
     print(f'[+] ✅ Correct Tasks: {len(total_tasks)} -> {len(correct_tasks)} (Convert Rate: {len(correct_tasks) / len(total_tasks):.2%})')
 
-def cosmic_ray_status(model_name, task):
+def cosmic_ray_status(benchmark_name, model_name, task):
     try:
-        response = subprocess.run(['cr-report', f'data/mods/{model_name}/{task}/cosmic-ray.sqlite', '--show-pending'], check=True, capture_output=True, text=True)
+        response = subprocess.run(['cr-report', f'data/{benchmark_name}/{model_name}/{task}/cosmic-ray.sqlite', '--show-pending'], check=True, capture_output=True, text=True)
     except Exception as e:
         print(f'[-] Error: {e}')
         return False
@@ -205,33 +203,35 @@ def cosmic_ray_status(model_name, task):
     else:
         return False
 
-def mutation_run_wrapper(model_name, task):
+def mutation_run_wrapper(benchmark_name, model_name, task):
     # cosmic-ray exec tutorial.toml tutorial.sqlite
-    completed = cosmic_ray_status(model_name, task)
+    completed = cosmic_ray_status(benchmark_name, model_name, task)
     if completed: return
     print(f"[+] Task {task}: Running mutations")
     
-    working_dir = f'data/mods/{model_name}/{task}'
+    working_dir = f'data/{benchmark_name}_mods/{model_name}/{task}'
     try:
         subprocess.run(['cosmic-ray', 'exec', f'cosmic-ray.toml', f'cosmic-ray.sqlite'], cwd=working_dir, check=True, timeout=120)
     except Exception as e:
         print(f'[-] Error: {e}')
 
-def mutation_run(model_generation_file):
+def mutation_run(benchmark_name, model_generation_file):
     model_name = model_generation_file.split('/')[-1].split('.')[0]
     correct_tasks = list()
-    with open(f'data/correct_tasks_{model_name}', 'r') as f:
+    correct_tasks_path = f'data/{benchmark_name}_correct/correct_tasks_{model_name}'
+    
+    with open(correct_tasks_path, 'r') as f:
         for line in f.readlines():
             correct_tasks.append(line.strip())
+    print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
             
     print(f'[+] ⏱️ Start time: {datetime.datetime.now()}')
-    process_map(mutation_run_wrapper, [model_name]*len(correct_tasks), correct_tasks, desc="[+] 🔮 Running mutations", max_workers=1)
+    process_map(mutation_run_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), correct_tasks, desc="[+] 🔮 Running mutations")
     print(f'[+] ⏱️ End time: {datetime.datetime.now()}')
 
-def pytest_run_wrapper(task_pair):
-    model_name, task_id = task_pair
-    test_file_path = f'data/mods/{model_name}/{task_id}/test.py'
-    source_code_path = f'data/mods/{model_name}/{task_id}'
+def pytest_run_wrapper(benchmark_name, model_name, task_id):
+    test_file_path = f'data/{benchmark_name}_mods/{model_name}/{task_id}/test.py'
+    source_code_path = f'data/{benchmark_name}_mods/{model_name}/{task_id}'
     try:
         # temporary dictionary to execute pytest
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -243,22 +243,26 @@ def pytest_run_wrapper(task_pair):
     except Exception as e:
         return {'model_name': model_name, 'task': task_id, 'result': None, "status": "error"}
 
-def pytest_run(model_name):
+def pytest_run(benchmark_name, model_name):
     tasks = list()
     
-    for task in os.listdir(f'data/mods/{model_name}'):
+    for task in os.listdir(f'data/{benchmark_name}_mods/{model_name}'):
         if task.startswith('task_'):
             tasks.append((model_name, task))
             
     results = process_map(pytest_run_wrapper, tasks, desc="[+] 🔄 Running pytest", chunksize=1)
     
-    with open(f'data/mods/{model_name}/results.jsonl', 'w') as f:
+    with open(f'data/{benchmark_name}_mods/{model_name}/results.jsonl', 'w') as f:
         for result in results:
             f.write(json.dumps(result) + '\n')
 
 
 if __name__ == "__main__":
-    model_generation_file_path = "data/results/datasetv3.jsonl"
-    cosmic_ray_init(model_generation_file_path, timeout=2, num_samples=10000)
-    cosmic_ray_setup(model_generation_file_path)
-    mutation_run(model_generation_file_path)
+    benchmark_name = "testbench"
+    for model_generation_file_path in tqdm(os.listdir(f"data/{benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
+        model_generation_file_path = f"data/{benchmark_name}_generation/{model_generation_file_path}"
+        print(f"[+] Processing {model_generation_file_path}")
+        
+        # cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=10000, num_test_cases=5)
+        cosmic_ray_setup(benchmark_name, model_generation_file_path)
+        # mutation_run(benchmark_name, model_generation_file_path)
