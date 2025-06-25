@@ -232,6 +232,59 @@ def mutation_run(benchmark_name, model_generation_file, num_test_cases):
     process_map(mutation_run_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc="[+] 🔮 Running mutations...")
     print(f'[+] ⏱️ End time: {datetime.datetime.now()}')
 
+def mutation_statistic_wrapper(benchmark_name, model_name, num_test_cases, task):
+    working_dir = f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/{task}'
+
+    statistic_info = {
+        "task": task,
+        "complete_flag": False,
+        "complete_rate": 0.0,
+        "surviving_mutants_rate": 0.0,
+        "total_jobs_number": 0,
+        "completed_jobs_number": 0,
+        "surviving_mutants_number": 0
+    }
+
+    try:
+        response = subprocess.run(['cr-report', f'cosmic-ray.sqlite', '--show-pending'], cwd=working_dir, check=True, capture_output=True, text=True)
+    except Exception as e:
+        print(f'[-] Error: {e}')
+        return statistic_info
+
+    total_jobs_match = re.search(r"total jobs:\s*(\d+)", response.stdout)
+    completed_jobs_match = re.search(r"complete:\s*(\d+)\s*\(", response.stdout)
+    surviving_mutants_match = re.search(r"surviving mutants:\s*(\d+)\s*\(", response.stdout)
+    
+    if total_jobs_match and completed_jobs_match:
+        total_jobs_number = int(total_jobs_match.group(1))
+        completed_jobs_number = int(completed_jobs_match.group(1))
+        statistic_info["complete_flag"] =  True if total_jobs_number == 0 else completed_jobs_number == total_jobs_number
+        statistic_info["complete_rate"] = completed_jobs_number / total_jobs_number
+        statistic_info["total_jobs_number"] = total_jobs_number
+        statistic_info["completed_jobs_number"] = completed_jobs_number
+    
+    if completed_jobs_match and surviving_mutants_match:
+        completed_jobs_number = int(completed_jobs_match.group(1))
+        surviving_mutants_number = int(surviving_mutants_match.group(1))
+        statistic_info["surviving_mutants_rate"] = surviving_mutants_number / completed_jobs_number
+        statistic_info["surviving_mutants_number"] = surviving_mutants_number
+
+    return statistic_info
+
+def mutation_statistic(benchmark_name, model_generation_file, num_test_cases):
+    model_name = model_generation_file.split('/')[-1].split('.')[0]
+    correct_tasks = list()
+    correct_tasks_path = f'data/{benchmark_name}/correct_tasks_tc_5_{model_name}'
+    
+    with open(correct_tasks_path, 'r') as f:
+        for line in f.readlines():  
+            correct_tasks.append(line.strip())
+    print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
+    
+    statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc="[+] 🔄 Running mutations...", chunksize=1)
+    print(statistics)
+
+
 def pytest_run_wrapper(benchmark_name, model_name, task_id):
     test_file_path = f'data/{benchmark_name}_mods/{model_name}/{task_id}/test.py'
     source_code_path = f'data/{benchmark_name}_mods/{model_name}/{task_id}'
@@ -271,3 +324,4 @@ if __name__ == "__main__":
         # cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=num_samples, num_test_cases=num_samples)
         # cosmic_ray_setup(benchmark_name, model_generation_file_path)
         mutation_run(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+        mutation_statistic(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
