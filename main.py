@@ -281,9 +281,14 @@ def mutation_statistic(benchmark_name, model_generation_file, num_test_cases):
             correct_tasks.append(line.strip())
     print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
     
-    statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc="[+] 🔄 Running mutations...", chunksize=1)
-    print(statistics)
+    surviving_mutants_rate = 0.0
 
+    statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc="[+] 🔄 Running mutation statistics...", chunksize=1)
+    for statistic in statistics:
+        surviving_mutants_rate += statistic["surviving_mutants_rate"]
+    
+    surviving_mutants_rate = (surviving_mutants_rate / len(correct_tasks)) if len(correct_tasks) > 0 else 0.0
+    print(f'[+] ✅ Surviving Mutants Rate: {surviving_mutants_rate:.2%}')
 
 def pytest_run_wrapper(benchmark_name, model_name, task_id):
     test_file_path = f'data/{benchmark_name}_mods/{model_name}/{task_id}/test.py'
@@ -314,14 +319,14 @@ def pytest_run(benchmark_name, model_name):
 
 
 if __name__ == "__main__":
-    benchmark_name = "testbench"
+    benchmark_name = "testeval"
     num_test_cases = 5
     num_samples = 10000
     
     for model_generation_file_path in tqdm(os.listdir(f"data/{benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
         model_generation_file_path = f"data/{benchmark_name}_generation/{model_generation_file_path}"
         print(f"[+] Processing {model_generation_file_path}")
-        # cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=num_samples, num_test_cases=num_samples)
+        # cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=num_samples, num_test_cases=num_test_cases)
         # cosmic_ray_setup(benchmark_name, model_generation_file_path)
-        mutation_run(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+        # mutation_run(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
         mutation_statistic(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
