@@ -320,13 +320,13 @@ def pytest_run(benchmark_name, model_name):
 
 if __name__ == "__main__":
     benchmark_name = "testeval"
-    num_test_cases = 5
+    num_test_cases = 2
     num_samples = 10000
     
     for model_generation_file_path in tqdm(os.listdir(f"data/{benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
         model_generation_file_path = f"data/{benchmark_name}_generation/{model_generation_file_path}"
         print(f"[+] Processing {model_generation_file_path}")
         # cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=num_samples, num_test_cases=num_test_cases)
-        # cosmic_ray_setup(benchmark_name, model_generation_file_path)
+        cosmic_ray_setup(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
         # mutation_run(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-        mutation_statistic(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+        # mutation_statistic(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
