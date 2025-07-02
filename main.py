@@ -116,7 +116,11 @@ def cosmic_ray_init(benchmark_name, model_generation_file, num_test_cases=5, tim
 
     if os.path.exists(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}'):
         print(f"[+] 🧹 Cleaning up existing files in {model_name}...")
-        shutil.rmtree(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}')
+        try:
+            shutil.rmtree(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}')
+        except PermissionError:
+            print(f"[-] PermissionError: {f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}'}")
+        
     print(f"[+] 📂 Creating new directory {model_name}...")
     os.makedirs(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}')
 
@@ -190,7 +194,7 @@ def cosmic_ray_status(benchmark_name, model_name, task, num_test_cases):
         response = subprocess.run(['cr-report', cosmic_ray_path, '--show-pending'], check=True, capture_output=True, text=True)
     except Exception as e:
         print(f'[-] Error: {e}')
-        return False
+        return (False, 0, 0)
     
     total_jobs_match = re.search(r"total jobs:\s*(\d+)", response.stdout)
     completed_jobs_match = re.search(r"complete:\s*(\d+)\s*\(", response.stdout)
@@ -199,14 +203,29 @@ def cosmic_ray_status(benchmark_name, model_name, task, num_test_cases):
         total_jobs_number = int(total_jobs_match.group(1))
         completed_jobs_number = int(completed_jobs_match.group(1))
         # print(f"[+] Task {task}: Total jobs: {total_jobs_number}, Completed jobs: {completed_jobs_number}")
-        if total_jobs_number == 0: return True
-        return completed_jobs_number == total_jobs_number
+        if total_jobs_number == 0: return (True, 0, 0)
+        return (completed_jobs_number == total_jobs_number, total_jobs_number, completed_jobs_number)
     else:
-        return False
+        return (False, 0, 0)
+    
+def mutation_status(benchmark_name, model_generation_file, num_test_cases):
+    model_name = model_generation_file.split('/')[-1].split('.')[0]
+    correct_tasks = list()
+    correct_tasks_path = f'data/{benchmark_name}/correct_tasks_tc_{num_test_cases}_{model_name}'
+    
+    with open(correct_tasks_path, 'r') as f:
+        for line in f.readlines():
+            correct_tasks.append(line.strip())
+    print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
+    
+    for task in correct_tasks:
+        completed, total_jobs_number, completed_jobs_number = cosmic_ray_status(benchmark_name, model_name, task, num_test_cases)
+        if completed: print(f'[+] Task {task}: Completed')
+        else: print(f'[-] Task {task}: Incomplete (Total Jobs: {total_jobs_number}, Completed Jobs: {completed_jobs_number})')
 
 def mutation_run_wrapper(benchmark_name, model_name, num_test_cases, task):
     # cosmic-ray exec tutorial.toml tutorial.sqlite
-    completed = cosmic_ray_status(benchmark_name, model_name, task, num_test_cases)
+    completed, _, _ = cosmic_ray_status(benchmark_name, model_name, task, num_test_cases)
     if completed: return
 
     # print(f"[+] Task {task}: Running mutations")
@@ -230,7 +249,7 @@ def mutation_run(benchmark_name, model_generation_file, num_test_cases):
     print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
             
     print(f'[+] ⏱️ Start time: {datetime.datetime.now()}')
-    process_map(mutation_run_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc="[+] 🔮 Running mutations...", max_workers=1)
+    process_map(mutation_run_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc="[+] 🔮 Running mutations...")
     print(f'[+] ⏱️ End time: {datetime.datetime.now()}')
 
 def mutation_statistic_wrapper(benchmark_name, model_name, num_test_cases, task):
@@ -289,7 +308,8 @@ def mutation_statistic(benchmark_name, model_generation_file, num_test_cases):
         surviving_mutants_rate += statistic["surviving_mutants_rate"]
     
     surviving_mutants_rate = (surviving_mutants_rate / len(correct_tasks)) if len(correct_tasks) > 0 else 0.0
-    print(f'[+] ✅ Surviving Mutants Rate: {surviving_mutants_rate:.2%}')
+
+    print(f'[+] ✅ Surviving Mutants Rate: {surviving_mutants_rate:.2%} \n')
 
 def pytest_run_wrapper(benchmark_name, model_name, task_id):
     test_file_path = f'data/{benchmark_name}_mods/{model_name}/{task_id}/test.py'
@@ -320,15 +340,18 @@ def pytest_run(benchmark_name, model_name):
 
 
 if __name__ == "__main__":
-    benchmark_name = "testbench"
+    # benchmark_name = "testbench"
+    benchmark_name = "testeval"
 
     num_samples = 10000
-    for num_test_cases in [1, 2, 5]:
+    for num_test_cases in [1]:
         print(f"[+] =============================== Processing {num_test_cases} test cases ================================")
         for model_generation_file_path in tqdm(os.listdir(f"data/{benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
             model_generation_file_path = f"data/{benchmark_name}_generation/{model_generation_file_path}"
             print(f"[+] Processing {model_generation_file_path}")
-            cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=num_samples, num_test_cases=num_test_cases)
+            
+            # cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=num_samples, num_test_cases=num_test_cases)
             # cosmic_ray_setup(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-            # mutation_run(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+            # mutation_status(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+            mutation_run(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
             # mutation_statistic(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
