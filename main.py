@@ -11,6 +11,7 @@ import random
 import shutil
 import tempfile
 import datetime
+import argparse
 import subprocess
 from tqdm import tqdm
 from multiprocessing import Pool
@@ -231,7 +232,7 @@ def mutation_run_wrapper(benchmark_name, model_name, num_test_cases, task):
     # print(f"[+] Task {task}: Running mutations")
     working_dir = f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/{task}'
     try:
-        subprocess.run(['cosmic-ray', 'exec', f'cosmic-ray.toml', f'cosmic-ray.sqlite'], cwd=working_dir, check=True, timeout=120)
+        subprocess.run(['cosmic-ray', 'exec', f'cosmic-ray.toml', f'cosmic-ray.sqlite'], cwd=working_dir, check=True, timeout=240)
     except subprocess.TimeoutExpired as e:
         # print(f'[-] mutation_run_wrapper, Timeout: {e}')
         pass
@@ -339,19 +340,27 @@ def pytest_run(benchmark_name, model_name):
             f.write(json.dumps(result) + '\n')
 
 
-if __name__ == "__main__":
-    # benchmark_name = "testbench"
-    benchmark_name = "testeval"
+if __name__ == "__main__":    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--benchmark_name", type=str, default='testeval')
+    parser.add_argument("--num_test_cases", type=int, default=1)
+    parser.add_argument("--num_samples", type=int, default=10000)
+    parser.add_argument("--mode", type=str, default='all')
+    args = parser.parse_args()
 
-    num_samples = 10000
     for num_test_cases in [1]:
-        print(f"[+] =============================== Processing {num_test_cases} test cases ================================")
-        for model_generation_file_path in tqdm(os.listdir(f"data/{benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
-            model_generation_file_path = f"data/{benchmark_name}_generation/{model_generation_file_path}"
+        print(f"[+] =============================== Processing {args.benchmark_name} {num_test_cases} test cases ================================")
+        for model_generation_file_path in tqdm(os.listdir(f"data/{args.benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
+            model_generation_file_path = f"data/{args.benchmark_name}_generation/{model_generation_file_path}"
             print(f"[+] Processing {model_generation_file_path}")
             
-            # cosmic_ray_init(benchmark_name, model_generation_file_path, timeout=2, num_samples=num_samples, num_test_cases=num_test_cases)
-            # cosmic_ray_setup(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-            # mutation_status(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-            mutation_run(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-            # mutation_statistic(benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+            if args.mode in ['cosmic_ray_init', 'all']:
+                cosmic_ray_init(args.benchmark_name, model_generation_file_path, timeout=2, num_samples=args.num_samples, num_test_cases=args.num_test_cases)
+            if args.mode in ['cosmic_ray_setup', 'all']:
+                cosmic_ray_setup(args.benchmark_name, model_generation_file_path, num_test_cases=args.num_test_cases)            
+            if args.mode in ['mutation_status', 'all']:
+                mutation_status(args.benchmark_name, model_generation_file_path, num_test_cases=args.num_test_cases)
+            if args.mode in ['mutation_run', 'all']:
+                mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases=args.num_test_cases)
+            if args.mode in ['mutation_statistic', 'all']:
+                mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases=args.num_test_cases)
