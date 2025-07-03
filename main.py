@@ -14,7 +14,7 @@ import datetime
 import argparse
 import subprocess
 from tqdm import tqdm
-from multiprocessing import Pool
+from collections import defaultdict
 from tqdm.contrib.concurrent import process_map
 
 toml_template = """
@@ -221,8 +221,10 @@ def mutation_status(benchmark_name, model_generation_file, num_test_cases):
     
     for task in correct_tasks:
         completed, total_jobs_number, completed_jobs_number = cosmic_ray_status(benchmark_name, model_name, task, num_test_cases)
-        if completed: print(f'[+] Task {task}: Completed')
-        else: print(f'[-] Task {task}: Incomplete (Total Jobs: {total_jobs_number}, Completed Jobs: {completed_jobs_number})')
+        if completed: 
+            print(f'[+] Task {task}: Completed ({completed_jobs_number}/{total_jobs_number})')
+        else: 
+            print(f'[-] Task {task}: Incompleted ({completed_jobs_number}/{total_jobs_number})')
 
 def mutation_run_wrapper(benchmark_name, model_name, num_test_cases, task):
     # cosmic-ray exec tutorial.toml tutorial.sqlite
@@ -232,7 +234,7 @@ def mutation_run_wrapper(benchmark_name, model_name, num_test_cases, task):
     # print(f"[+] Task {task}: Running mutations")
     working_dir = f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/{task}'
     try:
-        subprocess.run(['cosmic-ray', 'exec', f'cosmic-ray.toml', f'cosmic-ray.sqlite'], cwd=working_dir, check=True, timeout=240)
+        subprocess.run(['cosmic-ray', 'exec', f'cosmic-ray.toml', f'cosmic-ray.sqlite'], cwd=working_dir, check=True, timeout=360)
     except subprocess.TimeoutExpired as e:
         # print(f'[-] mutation_run_wrapper, Timeout: {e}')
         pass
@@ -242,7 +244,7 @@ def mutation_run_wrapper(benchmark_name, model_name, num_test_cases, task):
 def mutation_run(benchmark_name, model_generation_file, num_test_cases):
     model_name = model_generation_file.split('/')[-1].split('.')[0]
     correct_tasks = list()
-    correct_tasks_path = f'data/{benchmark_name}/correct_tasks_tc_{num_test_cases}_{model_name}'
+    correct_tasks_path = f'data/{benchmark_name}/correct_tasks_tc_5_{model_name}'
     
     with open(correct_tasks_path, 'r') as f:
         for line in f.readlines():
@@ -258,7 +260,6 @@ def mutation_statistic_wrapper(benchmark_name, model_name, num_test_cases, task)
 
     statistic_info = {
         "task": task,
-        "complete_flag": False,
         "complete_rate": 0.0,
         "surviving_mutants_rate": 0.0,
         "total_jobs_number": 0,
@@ -275,20 +276,21 @@ def mutation_statistic_wrapper(benchmark_name, model_name, num_test_cases, task)
     total_jobs_match = re.search(r"total jobs:\s*(\d+)", response.stdout)
     completed_jobs_match = re.search(r"complete:\s*(\d+)\s*\(", response.stdout)
     surviving_mutants_match = re.search(r"surviving mutants:\s*(\d+)\s*\(", response.stdout)
-    
-    if total_jobs_match and completed_jobs_match:
+
+    if total_jobs_match:
         total_jobs_number = int(total_jobs_match.group(1))
-        completed_jobs_number = int(completed_jobs_match.group(1))
-        statistic_info["complete_flag"] =  True if total_jobs_number == 0 else completed_jobs_number == total_jobs_number
-        statistic_info["complete_rate"] = completed_jobs_number / total_jobs_number
         statistic_info["total_jobs_number"] = total_jobs_number
-        statistic_info["completed_jobs_number"] = completed_jobs_number
-    
-    if completed_jobs_match and surviving_mutants_match:
+
+    if completed_jobs_match:
         completed_jobs_number = int(completed_jobs_match.group(1))
+        statistic_info["completed_jobs_number"] = completed_jobs_number
+        
+    if surviving_mutants_match:
         surviving_mutants_number = int(surviving_mutants_match.group(1))
-        statistic_info["surviving_mutants_rate"] = surviving_mutants_number / completed_jobs_number
         statistic_info["surviving_mutants_number"] = surviving_mutants_number
+    
+    statistic_info['complete_rate'] = statistic_info['completed_jobs_number'] / statistic_info["total_jobs_number"]
+    statistic_info['surviving_mutants_rate'] = (statistic_info['surviving_mutants_number'] / statistic_info['completed_jobs_number']) if statistic_info['completed_jobs_number'] > 0 else 0
 
     return statistic_info
 
@@ -306,11 +308,13 @@ def mutation_statistic(benchmark_name, model_generation_file, num_test_cases):
 
     statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc="[+] 🔄 Running mutation statistics...", chunksize=1)
     for statistic in statistics:
+        print(f"[+] {statistic}")
         surviving_mutants_rate += statistic["surviving_mutants_rate"]
     
     surviving_mutants_rate = (surviving_mutants_rate / len(correct_tasks)) if len(correct_tasks) > 0 else 0.0
-
     print(f'[+] ✅ Surviving Mutants Rate: {surviving_mutants_rate:.2%} \n')
+
+    return surviving_mutants_rate
 
 def pytest_run_wrapper(benchmark_name, model_name, task_id):
     test_file_path = f'data/{benchmark_name}_mods/{model_name}/{task_id}/test.py'
@@ -343,24 +347,28 @@ def pytest_run(benchmark_name, model_name):
 if __name__ == "__main__":    
     parser = argparse.ArgumentParser()
     parser.add_argument("--benchmark_name", type=str, default='testeval')
-    parser.add_argument("--num_test_cases", type=int, default=1)
     parser.add_argument("--num_samples", type=int, default=10000)
     parser.add_argument("--mode", type=str, default='all')
     args = parser.parse_args()
 
-    for num_test_cases in [1]:
+    statistic_info = defaultdict(dict)
+
+    for num_test_cases in [5]:
         print(f"[+] =============================== Processing {args.benchmark_name} {num_test_cases} test cases ================================")
         for model_generation_file_path in tqdm(os.listdir(f"data/{args.benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
             model_generation_file_path = f"data/{args.benchmark_name}_generation/{model_generation_file_path}"
             print(f"[+] Processing {model_generation_file_path}")
             
             if args.mode in ['cosmic_ray_init', 'all']:
-                cosmic_ray_init(args.benchmark_name, model_generation_file_path, timeout=2, num_samples=args.num_samples, num_test_cases=args.num_test_cases)
+                cosmic_ray_init(args.benchmark_name, model_generation_file_path, timeout=2, num_samples=args.num_samples, num_test_cases=num_test_cases)
             if args.mode in ['cosmic_ray_setup', 'all']:
-                cosmic_ray_setup(args.benchmark_name, model_generation_file_path, num_test_cases=args.num_test_cases)            
+                cosmic_ray_setup(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)            
             if args.mode in ['mutation_status', 'all']:
-                mutation_status(args.benchmark_name, model_generation_file_path, num_test_cases=args.num_test_cases)
+                mutation_status(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
             if args.mode in ['mutation_run', 'all']:
-                mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases=args.num_test_cases)
+                mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
             if args.mode in ['mutation_statistic', 'all']:
-                mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases=args.num_test_cases)
+                surviving_mutants_rate = mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+                statistic_info[model_generation_file_path][num_test_cases] = surviving_mutants_rate
+    
+    print(statistic_info)
