@@ -131,18 +131,21 @@ def cosmic_ray_init(benchmark_name, model_generation_file, num_test_cases=5, tim
     for idx, instance in tqdm(enumerate(raw_data), desc="[+] 💾 Processing raw data"):
         os.makedirs(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/task_{idx}')
 
+        # create 'mod.py'
+        with open(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/task_{idx}/mod.py', 'w') as f:
+            mod_code = ''
+            mod_code += code_import + '\n\n'
+            mod_code += instance['code'] + '\n\n'
+            mod_code = rename_test_functions(mod_code)
+            f.write(mod_code)
+
+        # create 'test.py'
         with open(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/task_{idx}/test.py', 'w') as f:
-            test_code = ''
-            test_code += code_import + '\n\n'
-            test_code += instance['code'] + '\n\n'
-            test_cases = ''
+            test_code = code_import + '\n\n' + 'from mod import *' + '\n\n'
             for test in instance['tests'][:num_test_cases]:
-                test_cases += f'{test}\n\n'
+                test_code += f'{test}\n\n'
             test_code += "\n\n" + "#" * 100 + "\n\n"
-            test_code += test_cases
-            
-            test_code = rename_test_functions(test_code)
-            f.write(test_code)
+            f.write(test_code)         
 
         # create 'toml'
         with open(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/task_{idx}/cosmic-ray.toml', 'w') as f:
@@ -160,7 +163,7 @@ def cosmic_ray_setup_wrapper(benchmark_name, model_name, task_id, num_test_cases
 
     # Run Cosmic-Ray Baseline
     try:
-        subprocess.run(['cosmic-ray', 'baseline', 'cosmic-ray.toml'], cwd=working_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        subprocess.run(['cosmic-ray', 'baseline', 'cosmic-ray.toml'], cwd=working_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60*num_test_cases)
         return True
     except Exception as e:
         return False
@@ -234,7 +237,7 @@ def mutation_run_wrapper(benchmark_name, model_name, num_test_cases, task):
     # print(f"[+] Task {task}: Running mutations")
     working_dir = f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/{task}'
     try:
-        subprocess.run(['cosmic-ray', 'exec', f'cosmic-ray.toml', f'cosmic-ray.sqlite'], cwd=working_dir, check=True, timeout=360)
+        subprocess.run(['cosmic-ray', 'exec', f'cosmic-ray.toml', f'cosmic-ray.sqlite'], cwd=working_dir, check=True, timeout=120*num_test_cases)
     except subprocess.TimeoutExpired as e:
         # print(f'[-] mutation_run_wrapper, Timeout: {e}')
         pass
@@ -306,7 +309,7 @@ def mutation_statistic(benchmark_name, model_generation_file, num_test_cases):
     
     surviving_mutants_rate = 0.0
 
-    statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc="[+] 🔄 Running mutation statistics...", chunksize=1)
+    statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(correct_tasks), [model_name]*len(correct_tasks), [num_test_cases]*len(correct_tasks), correct_tasks, desc=f"[+] 🔄 Running mutation ({num_test_cases} test cases) statistics...", chunksize=1)
     for statistic in statistics:
         print(f"[+] {statistic}")
         surviving_mutants_rate += statistic["surviving_mutants_rate"]
@@ -351,24 +354,33 @@ if __name__ == "__main__":
     parser.add_argument("--mode", type=str, default='all')
     args = parser.parse_args()
 
-    statistic_info = defaultdict(dict)
+    # statistic_info = defaultdict(dict)
 
-    for num_test_cases in [5]:
-        print(f"[+] =============================== Processing {args.benchmark_name} {num_test_cases} test cases ================================")
-        for model_generation_file_path in tqdm(os.listdir(f"data/{args.benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
-            model_generation_file_path = f"data/{args.benchmark_name}_generation/{model_generation_file_path}"
-            print(f"[+] Processing {model_generation_file_path}")
+    # for num_test_cases in [5,2,1]:
+    #     print(f"[+] =============================== Processing {args.benchmark_name} {num_test_cases} test cases ================================")
+    #     for model_generation_file_path in tqdm(os.listdir(f"data/{args.benchmark_name}_generation"), desc="[+] 🔄 Processing models"):
+    #         model_generation_file_path = f"data/{args.benchmark_name}_generation/{model_generation_file_path}"
+    #         print(f"[+] Processing {model_generation_file_path}")
             
-            if args.mode in ['cosmic_ray_init', 'all']:
-                cosmic_ray_init(args.benchmark_name, model_generation_file_path, timeout=2, num_samples=args.num_samples, num_test_cases=num_test_cases)
-            if args.mode in ['cosmic_ray_setup', 'all']:
-                cosmic_ray_setup(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)            
-            if args.mode in ['mutation_status', 'all']:
-                mutation_status(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-            if args.mode in ['mutation_run', 'all']:
-                mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-            if args.mode in ['mutation_statistic', 'all']:
-                surviving_mutants_rate = mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-                statistic_info[model_generation_file_path][num_test_cases] = surviving_mutants_rate
+    #         if args.mode in ['cosmic_ray_init', 'all']:
+    #             cosmic_ray_init(args.benchmark_name, model_generation_file_path, timeout=10, num_samples=args.num_samples, num_test_cases=num_test_cases)
+    #         if args.mode in ['cosmic_ray_setup', 'all']:
+    #             cosmic_ray_setup(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)            
+    #         if args.mode in ['mutation_status', 'all']:
+    #             mutation_status(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+    #         if args.mode in ['mutation_run', 'all']:
+    #             mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+    #         if args.mode in ['mutation_statistic', 'all']:
+    #             surviving_mutants_rate = mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+    #             statistic_info[model_generation_file_path][num_test_cases] = surviving_mutants_rate
     
-    print(statistic_info)
+    # print(statistic_info)
+    
+    for num_test_cases in [5,2,1]:
+        model_generation_file_path = 'data/testeval_generation/totalcov_Seed-Coder-8B-Instruct_results.jsonl'
+        # cosmic_ray_init(args.benchmark_name, model_generation_file_path, timeout=10, num_samples=args.num_samples, num_test_cases=num_test_cases)
+        # cosmic_ray_setup(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+        # mutation_status(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
+        mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases)
+        # mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases)
+
