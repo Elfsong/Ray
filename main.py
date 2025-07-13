@@ -300,10 +300,10 @@ def mutation_statistic_wrapper(benchmark_name, model_name, num_test_cases, task)
 
     return statistic_info
 
-def mutation_statistic(benchmark_name, model_generation_file, num_test_cases):
+def mutation_statistic(benchmark_name, model_generation_file, num_test_cases, baseline_test_cases=5):
     model_name = model_generation_file.split('/')[-1].split('.')[0]
     correct_tasks = list()
-    correct_tasks_path = f'data/{benchmark_name}/correct_tasks_tc_5_{model_name}'
+    correct_tasks_path = f'data/{benchmark_name}/correct_tasks_tc_{baseline_test_cases}_{model_name}'
     
     with open(correct_tasks_path, 'r') as f:
         for line in f.readlines():  
@@ -380,11 +380,12 @@ if __name__ == "__main__":
     for num_test_cases in [1]:
         # model_generation_file_path = 'data/testeval_generation/totalcov_Seed-Coder-8B-Instruct_results.jsonl'
         # model_generation_file_path = 'data/testbench_generation/TestBench_datasetv4.jsonl'
-        model_generation_file_path = 'data/testbench_generation/TestBench_gpt-4o_1_0.2_format.jsonl'
+        # model_generation_file_path = 'data/testbench_generation/TestBench_gpt-4o_1_0.2_format.jsonl'
+        model_generation_file_path = 'data/testbench_generation/TestBench_CodeLlama-7b-Instruct-hf_mutants.jsonl'
 
         # cosmic_ray_init(args.benchmark_name, model_generation_file_path, timeout=10, num_samples=args.num_samples, num_test_cases=num_test_cases)
         # cosmic_ray_setup(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
         # mutation_status(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-        mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases)
-        # mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases)
+        # mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases)
+        mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases, baseline_test_cases=5)
 
