@@ -126,8 +126,11 @@ def cosmic_ray_init(benchmark_name, model_generation_file, num_test_cases=5, tim
     os.makedirs(f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}')
 
     with open(model_generation_file, 'r') as data_handler:
-        # raw_data = json.loads(data_handler.read())[:num_samples]
-        raw_data = [json.loads(line) for line in data_handler.readlines()[:num_samples]]
+        # For [json] file
+        raw_data = json.loads(data_handler.read())[:num_samples]
+
+        # For [jsonl] file
+        # raw_data = [json.loads(line) for line in data_handler.readlines()[:num_samples]]
     print(f"[+] ✅ Raw data: {len(raw_data)}")
 
     for idx, instance in tqdm(enumerate(raw_data), desc="[+] 💾 Processing raw data"):
@@ -377,15 +380,16 @@ if __name__ == "__main__":
     #             statistic_info[model_generation_file_path][num_test_cases] = surviving_mutants_rate
     # print(statistic_info)
     
-    for num_test_cases in [1]:
+    for num_test_cases in [5,2,1]:
         # model_generation_file_path = 'data/testeval_generation/totalcov_Seed-Coder-8B-Instruct_results.jsonl'
         # model_generation_file_path = 'data/testbench_generation/TestBench_datasetv4.jsonl'
         # model_generation_file_path = 'data/testbench_generation/TestBench_gpt-4o_1_0.2_format.jsonl'
-        model_generation_file_path = 'data/testbench_generation/TestBench_CodeLlama-7b-Instruct-hf_mutants.jsonl'
+        # model_generation_file_path = 'data/testbench_generation/TestBench_CodeLlama-7b-Instruct-hf_mutants.jsonl'
+        model_generation_file_path = 'data/testbench_generation/TestBench_datasetv6.jsonl'
 
         # cosmic_ray_init(args.benchmark_name, model_generation_file_path, timeout=10, num_samples=args.num_samples, num_test_cases=num_test_cases)
         # cosmic_ray_setup(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
         # mutation_status(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-        # mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases)
-        mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases, baseline_test_cases=5)
+        mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases)
+        # mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases, baseline_test_cases=5)
 
