@@ -21,18 +21,21 @@ def main(base_dir):
             cursor.execute("SELECT job_id, operator_name, start_pos_row, start_pos_col, end_pos_row, end_pos_col FROM mutation_specs")
             mutations = cursor.fetchall()
 
-            cursor.execute("SELECT job_id, test_outcome FROM work_results")
-            work_results = {row[0]: row[1] for row in cursor.fetchall()}
+            cursor.execute("SELECT job_id, test_outcome, diff FROM work_results")
+            work_results = {row[0]: {"test_outcome": row[1], "diff": row[2]} for row in cursor.fetchall()}
 
             with open(code_path, "r") as f:
                 code = f.read()
 
             mutants_list = []
             for job_id, operator_name, start_row, start_col, end_row, end_col in mutations:
-                status = work_results.get(job_id, "pending")
+                status = work_results.get(job_id, {}).get("test_outcome", "pending")
+                diff = work_results.get(job_id, {}).get("diff", "No diff")
+
                 mutants_list.append({
                     "status": status,
                     "mutation_operator": operator_name,
+                    "mutation_diff": diff,
                     "start_line": start_row,
                     "start_column": start_col,
                     "end_line": end_row,
@@ -45,11 +48,11 @@ def main(base_dir):
                 "mutants": mutants_list
             })
 
-    with open("mutation_details.jsonl", "w") as f:
+    with open("new_mutation_details.jsonl", "w") as f:
         for result in results:
             f.write(json.dumps(result) + "\n")
 
 
 if __name__ == "__main__":
-    base_dir = "/home/nus_cisco_wp1/Projects/Ray/data/testeval/mutation_5/TestBench_CodeLlama-7b-Instruct-hf_mutants"
+    base_dir = "/home/nus_cisco_wp1/Projects/Ray/data/testbench/mutation_5/TestBench_datasetv6"
     main(base_dir)

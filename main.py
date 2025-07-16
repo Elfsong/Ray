@@ -390,6 +390,6 @@ if __name__ == "__main__":
         # cosmic_ray_init(args.benchmark_name, model_generation_file_path, timeout=10, num_samples=args.num_samples, num_test_cases=num_test_cases)
         # cosmic_ray_setup(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
         # mutation_status(args.benchmark_name, model_generation_file_path, num_test_cases=num_test_cases)
-        mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases)
-        # mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases, baseline_test_cases=5)
+        # mutation_run(args.benchmark_name, model_generation_file_path, num_test_cases)
+        mutation_statistic(args.benchmark_name, model_generation_file_path, num_test_cases, baseline_test_cases=5)
 
