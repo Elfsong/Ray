@@ -9,3 +9,4 @@ cyclomatic_complexity.jsonl
 data/results.zip
 data/*
 mutation_details.jsonl
+new_mutation_details.jsonl
